@@ -65,3 +65,4 @@ class Config:
     @property
     def state_db(self) -> Path:
         return self.data_dir / "state.db"
+

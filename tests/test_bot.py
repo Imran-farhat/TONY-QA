@@ -293,3 +293,4 @@ Expected: 401 with message. Actual: 500. module: Auth""")
 
 if __name__ == "__main__":
     sys.exit(main())
+

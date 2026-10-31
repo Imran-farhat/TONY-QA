@@ -87,3 +87,4 @@ class CaseRecord:
     @property
     def cell_range(self) -> str:
         return f"A{self.row}:L{self.row}"
+

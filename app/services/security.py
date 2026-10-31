@@ -74,3 +74,4 @@ def mask_text(text: str, mask_emails: bool = False) -> tuple[str, int]:
     if mask_emails:
         text = _EMAIL.sub(const("[EMAIL-MASKED]"), text)
     return text, count
+

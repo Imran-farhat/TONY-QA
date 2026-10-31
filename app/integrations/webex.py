@@ -169,3 +169,4 @@ class WebexAdapter(ChatAdapter):
             cur += line + "\n"
         parts.append(cur)
         return [p.strip() for p in parts if p.strip()]
+

@@ -501,3 +501,4 @@ def LABEL_ONLY(text: str) -> bool:
     """True if a follow-up answer looks like labelled fields (so 'steps: ...' is not mistaken for a command)."""
     from app.services.command_parser import LABEL_RE
     return bool(LABEL_RE.search(text))
+

@@ -434,3 +434,4 @@ class ExcelStore:
     def rebuild_index_now(self):
         with self.transaction():
             pass
+

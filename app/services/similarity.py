@@ -111,3 +111,4 @@ def search(query: str, cases: list[CaseRecord], include_deleted: bool = False) -
         if s > 0:
             out.append((c, s))
     return sorted(out, key=lambda x: (-x[1], x[0].tc_id))
+

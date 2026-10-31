@@ -6,3 +6,4 @@ from app.integrations.fake import FakeChat
 from app.integrations.webex import WebexAdapter
 
 __all__ = ["ChatAdapter", "FakeChat", "WebexAdapter"]
+

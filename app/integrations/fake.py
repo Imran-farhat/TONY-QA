@@ -37,3 +37,4 @@ class FakeChat(ChatAdapter):
     def mark(self) -> int:
         with self._lock:
             return len(self.sent)
+

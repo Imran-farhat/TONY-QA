@@ -102,3 +102,4 @@ class WriteQueue:
             fn(arg)
         except Exception:
             log.exception("callback failed")
+

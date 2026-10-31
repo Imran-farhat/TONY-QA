@@ -6,3 +6,4 @@ from app.storage.queue import Job, WriteQueue
 from app.storage.state import State
 
 __all__ = ["ExcelStore", "WorkbookLocked", "StoreError", "WriteQueue", "Job", "State"]
+

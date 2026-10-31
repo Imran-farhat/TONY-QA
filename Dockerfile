@@ -30,3 +30,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 # Production entrypoint
 CMD ["python", "-m", "app.main"]
+

@@ -51,3 +51,4 @@ class State:
     def clear_pending(self, room: str, user: str):
         with self._lock, self._conn() as c:
             c.execute("DELETE FROM pending WHERE room_id=? AND user_id=?", (room, user))
+

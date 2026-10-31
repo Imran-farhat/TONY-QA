@@ -212,3 +212,4 @@ python tests/test_webex.py
 | Bot ignores messages in group space | Bot not @mentioned | In Webex group spaces, bots only receive messages where they are explicitly tagged (`@Tony ...`). In 1:1 direct chats, every message is received. |
 | "Workbook is busy right now" warning | Excel or LibreOffice has workbook locked | Close Microsoft Excel. Tony's FIFO write queue will retry every 10s and save automatically. |
 | Webhooks fail with SSL/connection errors | Tunnel stopped | Restart your `ngrok` or `cloudflared` tunnel and ensure `PUBLIC_URL` matches the active URL. |
+
