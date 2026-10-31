@@ -1,0 +1,282 @@
+USER> priya@example.com: @tony add test case: Login fails with valid password on Safari.
+Steps: 1) open /login 2) enter valid user 3) click Sign in
+Expected: dashboard opens. Actual: spinner forever.
+module: Auth   priority: high   (screenshot attached)  https://jira.example.com/BUG-482
+
+TONY> Saved as TC-0001
+File: testcases.xlsx | Sheet: Auth | Row 2 | Cells A2:L2
+Screenshot: attachments/TC-0001_1.png   Link: BUG-482
+
+USER> priya@example.com: @tony add test case: checkout is broken
+
+TONY> I can't save "checkout is broken" yet, I need:
+  - Steps to reproduce
+  - Expected result
+Reply with e.g.  steps: 1) ... 2) ...  expected: ...   (I never guess these; say `cancel` to drop it.)
+
+USER> priya@example.com: @tony steps: 1) add an item 2) press pay  expected: order confirmation page  module: Checkout
+
+TONY> Saved as TC-0002
+File: testcases.xlsx | Sheet: Checkout | Row 2 | Cells A2:L2
+Note: priority defaulted to Medium. Tell me `update TC-0002 priority: ...` to change.
+
+USER> priya@example.com: @tony add test case: Safari login fails with correct password, spinner never stops
+Steps: 1) open login page 2) type valid credentials 3) press sign in
+Expected: dashboard shown. Actual: endless spinner. module: Auth
+
+TONY> This looks like TC-0001 in Auth!row 2 ("Login fails with valid password on Safari"), 75% similar.
+Reply "new" to save it as a new case, "update" to merge these details into TC-0001, or "cancel".
+
+USER> priya@example.com: @tony update
+
+TONY> Updated TC-0001 (Sheet "Auth", Row 2): steps changed; expected changed; actual changed. Previous values are kept in the Audit sheet.
+
+USER> priya@example.com: @tony add test case: Safari-ல login பக்கம் திறக்கல. படிகள்: 1) /login திறக்கவும் 2) valid user போடவும் 3) Sign in கிளிக் செய்யவும் Expected: dashboard திறக்கணும் Actual: spinner சுத்திட்டே இருக்கு module: Auth priority: medium
+
+TONY> Saved as TC-0003
+File: testcases.xlsx | Sheet: Auth | Row 3 | Cells A3:L3
+
+USER> priya@example.com: @tony add test cases:
+Case 1: Coupon code is accepted after expiry date
+Steps: 1) add item 2) apply expired coupon Expected: coupon is rejected module: Payments priority: high
+Case 2: Profile photo crop is off-centre on Android
+Steps: 1) open profile 2) upload photo 3) crop Expected: crop stays centred module: Profile
+
+TONY> Saved 2 cases:
+
+Saved as TC-0004 "Coupon code is accepted after expiry date"
+File: testcases.xlsx | Sheet: Payments | Row 2 | Cells A2:L2
+
+Saved as TC-0005 "Profile photo crop is off-centre on Android"
+File: testcases.xlsx | Sheet: Profile | Row 2 | Cells A2:L2
+Note: priority defaulted to Medium. Tell me `update TC-0005 priority: ...` to change.
+
+USER> priya@example.com: @tony where is the Safari login test?
+
+TONY> Best match: TC-0001 "Login fails with valid password on Safari"
+Location: Sheet "Auth", Row 2 (cell A2)   Status: Open
+Also similar: TC-0003 (Sheet "Auth", Row 3), 100% match
+
+USER> priya@example.com: @tony where is the payment refund test?
+
+TONY> No match for "the payment refund test" in the workbook (5 cases searched). I won't guess. Try other keywords, or say `list` to browse.
+
+USER> priya@example.com: @tony update TC-0001 status: passed
+
+TONY> Updated TC-0001 (Sheet "Auth", Row 2): status Open -> Passed. Previous values are kept in the Audit sheet.
+
+USER> priya@example.com: @tony add test case: Login API returns 500 for expired session
+Steps: 1) POST /login with password=Secr3t! 2) send header Authorization: Bearer abcdefghijklmnop12345 3) card 4111 1111 1111 1111
+Expected: 401 with message. Actual: 500. module: Auth
+
+TONY> Saved as TC-0006
+File: testcases.xlsx | Sheet: Auth | Row 4 | Cells A4:L4
+Note: priority defaulted to Medium. Tell me `update TC-0006 priority: ...` to change.
+Masked 4 sensitive value(s) (passwords/tokens/cards) before saving.
+
+USER> priya@example.com: @tony add test case: Export to CSV drops the last row
+Steps: 1) open Reports 2) click Export Expected: all rows exported module: Reports
+
+USER> priya@example.com: @tony add test case: Export to CSV drops the last row
+Steps: 1) open Reports 2) click Export Expected: all rows exported module: Reports
+
+TONY> Saved as TC-0007
+File: testcases.xlsx | Sheet: Reports | Row 2 | Cells A2:L2
+Note: priority defaulted to Medium. Tell me `update TC-0007 priority: ...` to change.
+
+USER> priya@example.com: @tony add test case: Tooltip clipped inside modal on small screens
+Steps: 1) open settings modal 2) hover help icon Expected: tooltip fully visible module: UI
+
+TONY> The workbook is open in another program (Excel), so I've queued 1 case(s) and will keep retrying. I'll confirm here the moment it's saved.
+
+TONY> Saved as TC-0008
+File: testcases.xlsx | Sheet: UI | Row 2 | Cells A2:L2
+Note: priority defaulted to Medium. Tell me `update TC-0008 priority: ...` to change.
+
+USER> user0@example.com: @tony add test case: Invoice PDF footer overlaps totals
+Steps: 1) open the page 2) trigger 0
+Expected: works as designed module: Bulk
+
+USER> user1@example.com: @tony add test case: Cart badge shows stale count
+Steps: 1) open the page 2) trigger 1
+Expected: works as designed module: Bulk
+
+USER> user2@example.com: @tony add test case: Dark theme hides toggle label
+Steps: 1) open the page 2) trigger 2
+Expected: works as designed module: Bulk
+
+USER> user3@example.com: @tony add test case: Avatar upload rejects HEIC files
+Steps: 1) open the page 2) trigger 3
+Expected: works as designed module: Bulk
+
+USER> user4@example.com: @tony add test case: Password reset email arrives late
+Steps: 1) open the page 2) trigger 4
+Expected: works as designed module: Bulk
+
+USER> user5@example.com: @tony add test case: Search autocomplete flickers
+Steps: 1) open the page 2) trigger 5
+Expected: works as designed module: Bulk
+
+USER> user6@example.com: @tony add test case: Calendar picker skips leap day
+Steps: 1) open the page 2) trigger 6
+Expected: works as designed module: Bulk
+
+USER> user7@example.com: @tony add test case: Notification bell never clears
+Steps: 1) open the page 2) trigger 7
+Expected: works as designed module: Bulk
+
+USER> user8@example.com: @tony add test case: Profile bio truncates emoji
+Steps: 1) open the page 2) trigger 8
+Expected: works as designed module: Bulk
+
+USER> user9@example.com: @tony add test case: Coupon applies twice at payment
+Steps: 1) open the page 2) trigger 9
+Expected: works as designed module: Bulk
+
+USER> user10@example.com: @tony add test case: Sidebar collapses after rotation
+Steps: 1) open the page 2) trigger 10
+Expected: works as designed module: Bulk
+
+USER> user11@example.com: @tony add test case: Webhook retries stop silently
+Steps: 1) open the page 2) trigger 11
+Expected: works as designed module: Bulk
+
+USER> user12@example.com: @tony add test case: Pagination resets active filter
+Steps: 1) open the page 2) trigger 12
+Expected: works as designed module: Bulk
+
+USER> user13@example.com: @tony add test case: Currency symbol misaligned in table
+Steps: 1) open the page 2) trigger 13
+Expected: works as designed module: Bulk
+
+USER> user14@example.com: @tony add test case: Drag handle unresponsive on touch
+Steps: 1) open the page 2) trigger 14
+Expected: works as designed module: Bulk
+
+USER> user15@example.com: @tony add test case: Onboarding wizard loops step three
+Steps: 1) open the page 2) trigger 15
+Expected: works as designed module: Bulk
+
+USER> user16@example.com: @tony add test case: Receipt download returns 404
+Steps: 1) open the page 2) trigger 16
+Expected: works as designed module: Bulk
+
+USER> user17@example.com: @tony add test case: Language switch ignores locale
+Steps: 1) open the page 2) trigger 17
+Expected: works as designed module: Bulk
+
+USER> user18@example.com: @tony add test case: Date range exceeds quota limit
+Steps: 1) open the page 2) trigger 18
+Expected: works as designed module: Bulk
+
+USER> user19@example.com: @tony add test case: Upload progress bar jumps backwards
+Steps: 1) open the page 2) trigger 19
+Expected: works as designed module: Bulk
+
+TONY> Saved as TC-0009
+File: testcases.xlsx | Sheet: Bulk | Row 2 | Cells A2:L2
+Note: priority defaulted to Medium. Tell me `update TC-0009 priority: ...` to change.
+
+TONY> Saved as TC-0010
+File: testcases.xlsx | Sheet: Bulk | Row 3 | Cells A3:L3
+Note: priority defaulted to Medium. Tell me `update TC-0010 priority: ...` to change.
+
+TONY> Saved as TC-0011
+File: testcases.xlsx | Sheet: Bulk | Row 4 | Cells A4:L4
+Note: priority defaulted to Medium. Tell me `update TC-0011 priority: ...` to change.
+
+TONY> Saved as TC-0012
+File: testcases.xlsx | Sheet: Bulk | Row 5 | Cells A5:L5
+Note: priority defaulted to Medium. Tell me `update TC-0012 priority: ...` to change.
+
+TONY> Saved as TC-0013
+File: testcases.xlsx | Sheet: Bulk | Row 6 | Cells A6:L6
+Note: priority defaulted to Medium. Tell me `update TC-0013 priority: ...` to change.
+
+TONY> Saved as TC-0014
+File: testcases.xlsx | Sheet: Bulk | Row 7 | Cells A7:L7
+Note: priority defaulted to Medium. Tell me `update TC-0014 priority: ...` to change.
+
+TONY> Saved as TC-0015
+File: testcases.xlsx | Sheet: Bulk | Row 8 | Cells A8:L8
+Note: priority defaulted to Medium. Tell me `update TC-0015 priority: ...` to change.
+
+TONY> Saved as TC-0016
+File: testcases.xlsx | Sheet: Bulk | Row 9 | Cells A9:L9
+Note: priority defaulted to Medium. Tell me `update TC-0016 priority: ...` to change.
+
+TONY> Saved as TC-0017
+File: testcases.xlsx | Sheet: Bulk | Row 10 | Cells A10:L10
+Note: priority defaulted to Medium. Tell me `update TC-0017 priority: ...` to change.
+
+TONY> Saved as TC-0018
+File: testcases.xlsx | Sheet: Bulk | Row 11 | Cells A11:L11
+Note: priority defaulted to Medium. Tell me `update TC-0018 priority: ...` to change.
+
+TONY> Saved as TC-0019
+File: testcases.xlsx | Sheet: Bulk | Row 12 | Cells A12:L12
+Note: priority defaulted to Medium. Tell me `update TC-0019 priority: ...` to change.
+
+TONY> Saved as TC-0020
+File: testcases.xlsx | Sheet: Bulk | Row 13 | Cells A13:L13
+Note: priority defaulted to Medium. Tell me `update TC-0020 priority: ...` to change.
+
+TONY> Saved as TC-0021
+File: testcases.xlsx | Sheet: Bulk | Row 14 | Cells A14:L14
+Note: priority defaulted to Medium. Tell me `update TC-0021 priority: ...` to change.
+
+TONY> Saved as TC-0022
+File: testcases.xlsx | Sheet: Bulk | Row 15 | Cells A15:L15
+Note: priority defaulted to Medium. Tell me `update TC-0022 priority: ...` to change.
+
+TONY> Saved as TC-0023
+File: testcases.xlsx | Sheet: Bulk | Row 16 | Cells A16:L16
+Note: priority defaulted to Medium. Tell me `update TC-0023 priority: ...` to change.
+
+TONY> Saved as TC-0024
+File: testcases.xlsx | Sheet: Bulk | Row 17 | Cells A17:L17
+Note: priority defaulted to Medium. Tell me `update TC-0024 priority: ...` to change.
+
+TONY> Saved as TC-0025
+File: testcases.xlsx | Sheet: Bulk | Row 18 | Cells A18:L18
+Note: priority defaulted to Medium. Tell me `update TC-0025 priority: ...` to change.
+
+TONY> Saved as TC-0026
+File: testcases.xlsx | Sheet: Bulk | Row 19 | Cells A19:L19
+Note: priority defaulted to Medium. Tell me `update TC-0026 priority: ...` to change.
+
+TONY> Saved as TC-0027
+File: testcases.xlsx | Sheet: Bulk | Row 20 | Cells A20:L20
+Note: priority defaulted to Medium. Tell me `update TC-0027 priority: ...` to change.
+
+TONY> Saved as TC-0028
+File: testcases.xlsx | Sheet: Bulk | Row 21 | Cells A21:L21
+Note: priority defaulted to Medium. Tell me `update TC-0028 priority: ...` to change.
+
+USER> priya@example.com: @tony add test case: should be ignored
+
+USER> priya@example.com: @tony delete TC-0003
+
+TONY> Delete TC-0003 "Safari-ல login பக்கம் திறக்கல" (Sheet "Auth", Row 3)?
+This is a soft delete: the row stays in the workbook marked Deleted and can be restored with `restore TC-0003`.
+Reply "yes" to confirm or "cancel".
+
+USER> priya@example.com: @tony yes
+
+TONY> Deleted TC-0003 (Sheet "Auth", Row 3). The row is kept, marked Deleted and greyed out; say `restore TC-0003` to undo.
+
+USER> priya@example.com: @tony where is the Tamil login test பக்கம்
+
+TONY> No match for "the Tamil login test பக்கம்" in the workbook (27 cases searched). I won't guess. Try other keywords, or say `list` to browse.
+
+USER> priya@example.com: @tony restore TC-0003
+
+TONY> Restored TC-0003 (Sheet "Auth", Row 3), status back to Open.
+
+USER> priya@example.com: @tony list high priority Auth cases
+
+TONY> 1 case(s) (High priority module "Auth"):
+TC-0001 [High | Passed] Login fails with valid password on Safari  -> Auth!A2
+
+USER> priya@example.com: @tony show TC-0001
+
