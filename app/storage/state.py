@@ -1,4 +1,4 @@
-"""Tiny SQLite state: processed chat events (idempotency) and pending conversations."""
+"""SQLite state persistence for processed events and pending conversations."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,7 @@ import threading
 import time
 from typing import Optional
 
-from ..config import Config
+from app.config import Config
 
 
 class State:
@@ -25,7 +25,6 @@ class State:
     def _conn(self):
         return sqlite3.connect(self.path, timeout=30, check_same_thread=False)
 
-    # ---------------------------------------------------------------- idempotency
     def claim_event(self, event_id: str) -> bool:
         """True the first time an event id is seen, False for every redelivery (atomic)."""
         with self._lock, self._conn() as c:
@@ -37,7 +36,6 @@ class State:
             c.execute("DELETE FROM events WHERE ts < ?", (time.time() - days * 86400,))
             c.execute("DELETE FROM pending WHERE expires < ?", (time.time(),))
 
-    # ------------------------------------------------------------------- pending
     def set_pending(self, room: str, user: str, payload: dict):
         with self._lock, self._conn() as c:
             c.execute("INSERT OR REPLACE INTO pending VALUES(?,?,?,?)",

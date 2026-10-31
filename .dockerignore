@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+data
+sample
+tests
+docs
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+*.tmp
+*.lock

@@ -1,10 +1,10 @@
-"""Small, dependency-free text similarity used for duplicate detection and search."""
+"""Text similarity and tokenization for duplicate detection and natural language search."""
 from __future__ import annotations
 
 import re
 from difflib import SequenceMatcher
 
-from ..models import CaseRecord
+from app.models import CaseRecord
 
 STOP = set("""a an the of for to in on at by with and or but is are was were be been it this that these those
 where what which who how when does do did can could would should will shall please tony find show me my i you we
@@ -12,13 +12,15 @@ us our your there here from as if then than so just any some test tests case cas
 locate lookup look up about into onto not no""".split()) - {"not", "no"}
 STOP |= {"test", "case", "cases", "tc", "tests", "testcase"}
 
-SYN = {"correct": "valid", "right": "valid", "proper": "valid", "good": "valid",
-       "signin": "login", "signon": "login", "logon": "login", "logging": "login",
-       "stuck": "spinner", "hangs": "spinner", "hang": "spinner", "loading": "spinner", "spinning": "spinner",
-       "infinite": "forever", "never": "forever", "endless": "forever", "indefinitely": "forever",
-       "broken": "fail", "fails": "fail", "failed": "fail", "failing": "fail", "failure": "fail",
-       "error": "fail", "errors": "fail", "crash": "fail", "crashes": "fail", "crashed": "fail",
-       "pwd": "password", "passwd": "password", "passwords": "password"}
+SYN = {
+    "correct": "valid", "right": "valid", "proper": "valid", "good": "valid",
+    "signin": "login", "signon": "login", "logon": "login", "logging": "login",
+    "stuck": "spinner", "hangs": "spinner", "hang": "spinner", "loading": "spinner", "spinning": "spinner",
+    "infinite": "forever", "never": "forever", "endless": "forever", "indefinitely": "forever",
+    "broken": "fail", "fails": "fail", "failed": "fail", "failing": "fail", "failure": "fail",
+    "error": "fail", "errors": "fail", "crash": "fail", "crashes": "fail", "crashed": "fail",
+    "pwd": "password", "passwd": "password", "passwords": "password"
+}
 
 _TOKEN = re.compile(r"[A-Za-z0-9\u0B80-\u0BFF]+")
 

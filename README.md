@@ -1,260 +1,255 @@
-# Tony: QA Test-Case Management Bot (Local Development)
+# Tony: QA Test-Case Management Bot
 
-Tony is a 24x7 QA test-case keeper for team chat. When you describe a test case in chat, Tony extracts structured fields, files it directly into your team's Excel workbook, saves attachments and screenshots, links Jira tickets, and informs you **exactly** where the test case lives (`Sheet "Auth", Row 2, cells A2:L2`).
+Tony is an automated, 24x7 QA test-case keeper built for Cisco Webex. When engineers or testers describe a bug or test scenario in chat, Tony extracts structured fields, stores the case into the team's shared Excel workbook, archives attachments and screenshots, links Jira tickets, and reports back the **exact sheet and cell coordinates** (e.g. `Sheet "Auth", Row 2, cells A2:L2`).
 
-Built for Cisco Webex with a fully isolated chat adapter layer, allowing Slack/Teams adapters to be added without touching core business logic or storage.
+---
+
+## Problem Statement & Purpose
+
+In fast-paced engineering teams, test scenarios and bug repro steps shared in chat channels are easily lost in chat history or copy-pasted haphazardly into messy spreadsheets. 
+
+**Tony solves this by serving as a zero-friction bridge between team chat and spreadsheet persistence:**
+- **No manual entry**: Log test cases directly from Webex using natural chat messages.
+- **Accurate localization**: Every saved case is pinned to an exact row and range in Excel with an auto-rebuilt Index sheet.
+- **Data integrity**: Protects against formula injection, race conditions, file corruption, and Excel file-locking conflicts.
+- **Audit trail**: Maintains an immutable log of every addition, update, soft-delete, and restoration.
+- **Strict safety guardrails**: Masks credentials and tokens before persistence, and never hallucinates or invents missing test steps.
+
+---
+
+## Core Features
+
+- 📝 **Structured Case Extraction**: Intelligently captures Title, Steps, Expected, Actual, Module, Priority, Environment, and URLs.
+- 🛡️ **Zero-Hallucination Guardrail**: Never guesses or invents missing reproduction steps or expected outcomes; pauses and prompts the user for clarification.
+- 🔐 **Pre-Parse Sensitive Data Masking**: Automatically detects and masks passwords, bearer tokens, JWTs, vendor API keys, credit cards (Luhn-verified), and Aadhaar numbers *before* parsing, logging, or saving.
+- 🔍 **Fuzzy Natural Language Search**: Answers questions like `@Tony where is the Safari login test?` using typo-tolerant token matching and sequence similarity without calling an external LLM.
+- ⚠️ **Duplicate Detection**: Computes similarity scores against existing cases in the sheet to prevent redundant test filings.
+- 📊 **Resilient Excel Storage Engine**:
+  - One sheet per module (`Auth`, `Billing`, `UI`, `General`).
+  - Auto-synchronized `Index` sheet with direct clickable Excel hyperlinks (`#'Auth'!A2`).
+  - Immutable `Audit` log tracking timestamps, users, actions (`ADD`, `UPDATE`, `DELETE`, `RESTORE`), old values, and new values.
+- 🔒 **File-Lock & Concurrency Protection**: Multi-tier concurrency model with in-process locks, cross-process `filelock`, and a single-worker FIFO `WriteQueue`. If an engineer has the Excel file open, Tony queues the write, informs the user, and retries automatically every 10 seconds.
+- 🔄 **Safe Mutations**: Non-destructive soft deletes (greyed out with strikethrough in Excel) with one-click restoration. IDs are never recycled (`TC-0001`, `TC-0002`).
+- 📦 **Automated Rolling Backups**: Timestamped copy saved in `data/backups/` before every write (keeps the latest 20); auto-heals corrupted workbooks from the newest backup.
+
+---
+
+## Technology Stack
+
+- **Language**: Python 3.11+ (tested on Python 3.12 and 3.13)
+- **Web Framework**: [FastAPI](https://fastapi.tiangolo.com/) with asynchronous lifespan handlers
+- **ASGI Server**: [Uvicorn](https://www.uvicorn.org/)
+- **Spreadsheet Engine**: [openpyxl](https://openpyxl.readthedocs.io/)
+- **Concurrency & Locking**: Standard library `threading`, `queue`, and [filelock](https://py-filelock.readthedocs.io/)
+- **State & Idempotency**: [SQLite3](https://docs.python.org/3/library/sqlite3.html) (WAL mode)
+- **Containerization**: [Docker](https://www.docker.com/) & Docker Compose
+- **Platform APIs**: Cisco Webex REST APIs (v1) & Webhooks with HMAC-SHA1 signature verification
+
+---
+
+## Architecture Diagram
 
 ```text
-@tony add test case: Login fails with valid password on Safari.
-Steps: 1) open /login 2) enter valid user 3) click Sign in
-Expected: dashboard opens. Actual: spinner forever.
-module: Auth   priority: high   (screenshot attached)  https://jira.example.com/BUG-482
+Cisco Webex
+    │
+    ▼ (HTTPS Webhook Event)
+app/main.py (FastAPI: HMAC-SHA1 validation, 200 OK immediate ack, async thread pool)
+    │
+    ├──> app/integrations/webex.py (Fetch full message, download attachments, post responses)
+    │        │
+    │        ▼ (Platform-neutral IncomingMessage)
+    └──> app/services/bot_service.py (Orchestrator: commands, pending conversations, replies)
+             │
+             ├──> app/services/security.py (Regex & Luhn credential masking BEFORE parsing)
+             │
+             ├──> app/services/command_parser.py (Deterministic command & test-case parsing)
+             │
+             ├──> app/services/similarity.py (Tokenization & similarity for search / duplicates)
+             │
+             └──> app/storage/queue.py (Serialised FIFO write worker thread + lock retries)
+                      │
+                      ▼
+                  app/storage/excel.py (Atomic read-modify-write -> testcases.xlsx, backups)
+                      │
+                  app/storage/state.py (SQLite: event idempotency & pending draft conversations)
 ```
+
+---
+
+## Simplified Project Structure
+
 ```text
-Saved as TC-0001
-File: testcases.xlsx | Sheet: Auth | Row 2 | Cells A2:L2
-Screenshot: attachments/TC-0001_1.png   Link: BUG-482
+tony/
+├── app/
+│   ├── __init__.py           # Package marker
+│   ├── main.py               # FastAPI application, webhook listener, and healthcheck
+│   ├── config.py             # Central environment and settings loader (.env)
+│   ├── models.py             # Platform-neutral data models (IncomingMessage, Draft, CaseRecord)
+│   │
+│   ├── services/
+│   │   ├── __init__.py       # Service exports
+│   │   ├── bot_service.py    # Core business logic and command execution flow
+│   │   ├── command_parser.py # Rule-based command and field extraction
+│   │   ├── security.py       # Sensitive credential and personal data masking
+│   │   └── similarity.py     # Tokenization, fuzzy similarity, and duplicate scoring
+│   │
+│   ├── integrations/
+│   │   ├── __init__.py       # Integration exports
+│   │   ├── base.py           # Abstract ChatAdapter contract
+│   │   ├── webex.py          # Production Cisco Webex REST & Webhook adapter
+│   │   └── fake.py           # In-memory mock adapter for offline testing
+│   │
+│   └── storage/
+│       ├── __init__.py       # Storage exports
+│       ├── excel.py          # ExcelStore: atomic transactions, Index, and Audit
+│       ├── queue.py          # WriteQueue: FIFO worker thread with lock retry
+│       └── state.py          # SQLite engine for idempotency and pending drafts
+│
+├── tests/
+│   ├── __init__.py           # Tests package marker
+│   ├── test_bot.py           # Offline functional test suite (12 samples + 13 edge cases)
+│   └── test_webex.py         # Mocked Webex API adapter and webhook test suite
+│
+├── docs/
+│   └── SETUP.md              # Detailed local setup, Webex bot creation, and Docker guide
+│
+├── sample/                   # Sample workbook, attachments, and transcripts
+├── data/
+│   └── .gitkeep              # Persistent storage mount (testcases.xlsx, state.db, backups)
+│
+├── Dockerfile                # Production multi-layer Docker image definition
+├── docker-compose.yml        # Docker Compose configuration with volume persistence
+├── .dockerignore             # Excludes secrets, virtual environments, and local data
+├── .env.example              # Environment variables template with explanations
+├── .gitignore                # Git ignore rules (.env, data/*, __pycache__)
+├── requirements.txt          # Production runtime dependencies
+└── README.md                 # Primary project documentation
 ```
+
+---
+
+## Request Flow & Interview Explainability
+
+When explaining Tony's technical architecture in an interview, trace an incoming message through this 8-step pipeline:
+
+1. **Webex Message Event**: A user types a command (e.g. `@Tony add test case:...`) in a direct chat or group space. Cisco Webex dispatches an HTTP POST webhook containing event metadata.
+2. **FastAPI Webhook Listener (`app/main.py`)**: 
+   - Receives the raw payload and verifies the HMAC-SHA1 signature from the `X-Spark-Signature` header against `WEBEX_WEBHOOK_SECRET`.
+   - Returns an immediate `{"ok": True}` HTTP 200 response to Webex (within milliseconds) to prevent webhook timeouts or retries.
+   - Hands off the event payload to an asynchronous `ThreadPoolExecutor` worker.
+3. **Webex Integration Adapter (`app/integrations/webex.py`)**:
+   - Webex webhooks deliberately omit message text for security; the adapter makes an authenticated `GET /messages/{id}` call using the bot token.
+   - Discards loopback messages generated by the bot itself (`personId == bot.id`).
+   - Downloads any attached image/file streams and normalizes the payload into a platform-neutral `IncomingMessage` object.
+4. **Security & Data Sanitization (`app/services/security.py`)**:
+   - Before parsing or storage, the raw text is scanned for passwords, tokens, API keys, and Luhn-valid credit card numbers, masking them in memory.
+5. **Deterministic Command Parser (`app/services/command_parser.py`)**:
+   - Strips the `@Tony` mention and matches the command pattern (`add`, `where`, `show`, `list`, `update`, `delete`, `restore`).
+   - Extracts structured labels (`Steps:`, `Expected:`, `Actual:`, `module:`, `priority:`).
+6. **Bot Orchestration Service (`app/services/bot_service.py`)**:
+   - Claims the `event_id` atomically in SQLite (`app/storage/state.py`) to guarantee idempotency.
+   - **Guardrail Check**: If reproduction steps or expected results are missing, Tony halts the flow, stages the draft in SQLite, and prompts the user for clarification.
+   - **Duplicate Check**: Computes fuzzy similarity against existing records via `app/services/similarity.py`. If similarity exceeds the threshold, prompts the user before writing.
+7. **Thread-Safe Excel Persistence (`app/storage/queue.py` & `app/storage/excel.py`)**:
+   - Mutating jobs are enqueued onto a dedicated background FIFO writer thread.
+   - Acquires thread locks and cross-process file locks.
+   - If the spreadsheet is open in Microsoft Excel, catches the lock, notifies the user that the write is queued, and retries every 10 seconds.
+   - Allocates the next sequential ID (`TC-XXXX`), appends the row to the corresponding module sheet, registers the audit record in `Audit`, rebuilds the `Index` sheet with clickable hyperlinks, saves a timestamped backup, and performs an atomic file replacement via `os.replace`.
+8. **Webex Reply Delivery (`app/integrations/webex.py`)**:
+   - Tony formats the confirmation message with exact coordinates (`Saved as TC-0001 | Sheet: Auth | Row 2 | Cells A2:L2`).
+   - Posts the reply back to the Webex room via Webex REST API (`POST /messages`).
 
 ---
 
 ## Commands & Syntax
 
-| Command | Action |
+| User Command | Tony Action |
 |---|---|
-| `@tony add test case: ...` (or multi-case: `Case 1: ... Case 2: ...`) | Extract fields, prompt for missing steps/expected results, detect duplicates, save to Excel, reply with exact cell coordinates |
-| `@tony where is the Safari login test?` | Search the sheets, reply with best match + similarity score, or "No match" (never hallucinates) |
-| `@tony show TC-0001` | Display full test case details |
-| `@tony list high priority Auth cases` | Filtered list by priority, status, or module (e.g. `list open cases`, `list all`) |
-| `@tony update TC-0001 status: passed` | Modify row in place; old values logged in `Audit` |
-| `@tony delete TC-0001` then `yes` | Soft delete (row greyed out, Status=Deleted); `restore TC-0001` undoes it |
-| `@tony help` | Display available commands |
-
-**Recognized Labels (case-insensitive):** `title, module, priority, steps, expected, actual, environment, status, link` (plus Tamil aliases such as `படிகள்`). Text preceding the first label is captured as the title.
-
----
-
-## Prerequisites & Requirements
-
-- **Python Version**: Python 3.11, 3.12, or 3.13 (Windows, macOS, or Linux).
-- **Webex Account**: Access to [developer.webex.com](https://developer.webex.com/) to create a Bot.
-- **Local Webhook Tunnel (for Webex testing)**: [Cloudflare Quick Tunnel (`cloudflared`)](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) or [ngrok](https://ngrok.com/) to temporarily expose `http://localhost:8080`.
+| `@Tony add test case: <title>. Steps: 1) ... Expected: ... Actual: ... module: Auth priority: high` | Extracts fields, validates required steps, detects duplicates, files in Excel, and replies with coordinates |
+| `@Tony where is the Safari login test?` | Performs fuzzy text search across all module sheets and returns best match + location |
+| `@Tony show TC-0001` | Displays full test case details card |
+| `@Tony list high priority Auth cases` | Returns filtered list by priority, module, or status |
+| `@Tony update TC-0001 status: passed` | Updates row in place and records old/new values in the `Audit` sheet |
+| `@Tony delete TC-0001` | Requests confirmation, then marks row as `Deleted` (soft delete with strikethrough) |
+| `@Tony restore TC-0001` | Restores soft-deleted case back to its previous status |
+| `@Tony help` | Displays the command cheat sheet |
 
 ---
 
-## Local Setup & Configuration
+## Quickstart & Local Execution
 
-### 1. Create a Webex Bot
-1. Navigate to [developer.webex.com](https://developer.webex.com/) and sign in.
-2. Click your profile avatar $\rightarrow$ **My Webex Apps** $\rightarrow$ **Create a New App** $\rightarrow$ **Create a Bot**.
-3. Enter:
-   - **Bot name**: e.g. `Tony`
-   - **Bot username**: e.g. `tony-test-bot@webex.bot`
-   - **Description**: `QA Test Case Keeper Bot`
-4. Click **Add Bot** and copy the **Bot access token**. Save it securely.
-5. In your Webex client, create a test space and add your bot's username, or open a 1:1 chat with the bot. *(In group spaces, Tony responds only when @mentioned; in 1:1 direct chats, every message is processed).*
-
-### 2. Environment Configuration
-Copy the template configuration file:
+### 1. Configure `.env`
+Create `.env` from `.env.example`:
 ```powershell
 cp .env.example .env
 ```
-Edit `.env` with your settings:
+Fill in your `WEBEX_BOT_TOKEN` and `WEBEX_WEBHOOK_SECRET` (generate secret via `python -c "import secrets; print(secrets.token_hex(32))"`).
 
-```env
-# Mandatory for Webex integration:
-WEBEX_BOT_TOKEN=your_webex_bot_access_token_here
-
-# Recommended for signature verification:
-WEBEX_WEBHOOK_SECRET=your_random_secret_string_here
-
-# Optional: Set this to your temporary tunnel URL (e.g., from cloudflared or ngrok)
-# When provided, Tony automatically registers and self-heals its webhook on startup
-PUBLIC_URL=https://your-temporary-subdomain.trycloudflare.com
-
-# Storage & Server
-PORT=8080
-DATA_DIR=./data
-WORKBOOK_NAME=testcases.xlsx
-TZ=Asia/Kolkata
-LOG_LEVEL=INFO
-```
-
-### 3. Virtual Environment & Dependencies
-In Windows PowerShell (from the project root `tony`):
+### 2. Run Locally
 ```powershell
-# Create virtual environment
-python -m venv .venv
-
-# Activate virtual environment
-.\.venv\Scripts\Activate.ps1
-
-# Install runtime dependencies
+# Install dependencies
 pip install -r requirements.txt
 
-# (Optional) Install development/test dependencies
-pip install -r requirements-dev.txt
+# Start Tony
+python -m app.main
 ```
-
----
-
-## Webhook Connectivity (Local Development Tunnel)
-
-Because Webex delivers events to public HTTPS endpoints:
-1. Start your local tunnel pointing to Tony's local port (`8080`):
-   ```powershell
-   # Using Cloudflare Quick Tunnel:
-   cloudflared tunnel --url http://localhost:8080
-
-   # Or using ngrok:
-   ngrok http 8080
-   ```
-2. Copy the generated HTTPS URL (e.g. `https://xxxx-xxxx.trycloudflare.com`).
-3. Add the URL to `PUBLIC_URL` in `.env` (no trailing slash).
-4. **Automatic Webhook Registration**: When Tony starts with `PUBLIC_URL` defined, `WebexAdapter.ensure_webhook()` automatically creates/updates the Webex webhook named `tony-messages` pointing to:
-   ```text
-   <PUBLIC_URL>/webex/webhook
-   ```
-   with resource `messages`, event `created`, and the HMAC secret.
-5. If registering manually on [developer.webex.com/docs/api/v1/webhooks/create-a-webhook](https://developer.webex.com/docs/api/v1/webhooks/create-a-webhook):
-   - **Name**: `tony-messages`
-   - **Target URL**: `https://<your-tunnel-url>/webex/webhook`
-   - **Resource**: `messages`
-   - **Event**: `created`
-   - **Secret**: `<WEBEX_WEBHOOK_SECRET>`
-
----
-
-## Running Tony Locally
-
-Start the FastAPI application:
-```powershell
-python -m bot.app
-```
-
-On startup, Tony will:
-- Authenticate with Webex via `GET /people/me`.
-- Display the verified Bot identity name and ID in console logs.
-- Auto-register or verify the webhook if `PUBLIC_URL` is configured.
-- Start the background keepalive thread (self-heals the webhook every 5 minutes).
-- Serve incoming webhooks on `http://0.0.0.0:8080/webex/webhook`.
-
-### Health Check
-In another terminal, inspect Tony's operational health:
+The server starts on `http://0.0.0.0:8080`. Verify health:
 ```powershell
 curl http://localhost:8080/health
 ```
-or via PowerShell:
+
+### 3. Expose via Temporary Tunnel (for Live Webex Testing)
+Run in a separate terminal:
 ```powershell
-Invoke-RestMethod http://localhost:8080/health
+ngrok http 8080
+# or: cloudflared tunnel --url http://localhost:8080
 ```
-Expected response:
-```json
-{
-  "status": "ok",
-  "uptime_s": 12,
-  "workbook": "ok",
-  "cases": 0,
-  "write_queue": 0,
-  "webhook": "active",
-  "last_event_age_s": null
-}
-```
+Add the forwarding URL to `PUBLIC_URL` in `.env` and restart Tony. Tony automatically registers and maintains its Webex webhook.
 
 ---
 
-## Offline & Mock Testing
+## Docker Deployment
 
-Tony includes a comprehensive test suite that runs without live Webex or internet connectivity:
-
+### 1. Build & Run
 ```powershell
-# Run the 28 end-to-end sample and edge-case scenarios (fake chat adapter)
-python tests/run_samples.py
-
-# Run the Webex adapter and webhook test suite against a mocked Webex API
-python tests/test_webex_adapter.py
+docker compose up -d --build
 ```
 
----
-
-## Architecture & Data Flow
-
-```text
-Webex ──webhook──> bot/app.py (FastAPI: signature check, /health, ack in ms, worker pool)
-                      │  bot/chat/webex.py  (ONLY Webex code: fetch message, download attachments, send)
-                      ▼  IncomingMessage (platform-neutral)
-                bot/core/service.py  (orchestrator: commands, follow-ups, duplicate detection, replies)
-                  │            │             │
-          parser.py    masking.py    textsim.py        (core/: pure functions, unit-testable)
-                  │
-                bot/storage/write_queue.py ──> bot/storage/excel_store.py ──> testcases.xlsx, attachments/, backups/
-                bot/storage/state.py (SQLite: processed event IDs, pending draft conversations)
+### 2. View Logs & Container Status
+```powershell
+docker compose ps
+docker compose logs -f
 ```
 
-### Workbook Layout (`testcases.xlsx`)
-- **Module Sheets** (e.g. `Auth`, `Billing`, `General`): Columns `TC ID | Title | Module | Priority | Steps | Expected | Actual | Environment | Links | Attachments | Status | Reporter / Date`.
-- **`Index`**: Automatically synchronized mapping of `TC ID -> Sheet, Row, Title` with direct clickable Excel hyperlink jumping to `#'<sheet>'!A<row>`.
-- **`Audit`**: Immutable event history tracking `Timestamp, User, Action (ADD/UPDATE/DELETE/RESTORE), TC ID, Field, Old value, New value, Source message ID`.
-
----
-
-## Guardrails & Reliability
-
-- **Deterministic Parsing**: Never hallucinates or invents missing steps or expected outcomes. Asks follow-up questions instead of writing incomplete records.
-- **Sensitive Data Masking**: Automatically masks passwords, bearer tokens, API keys, Aadhaar numbers, and credit card numbers *before* parsing, saving, or logging.
-- **Excel Concurrency & Open File Protection**: Uses in-process locking and cross-process `filelock`. If an engineer has `testcases.xlsx` open in Excel, writes are queued in memory, the user is notified, and Tony retries every 10 seconds until unlocked.
-- **Automated Backups**: Creates a timestamped backup before every write in `data/backups/` (keeps latest 20).
-- **Idempotency**: Protects against duplicate webhook deliveries at two tiers: SQLite event claims and `<message_id>#<n>` checks in the `Audit` sheet.
-
----
-
-## Project Structure
-
-```text
-tony/
-├── bot/
-│   ├── __init__.py
-│   ├── app.py              # FastAPI app, /health, /webex/webhook, keepalive loop
-│   ├── config.py           # Configuration loaded from environment (.env)
-│   ├── models.py           # Platform-neutral data models
-│   ├── chat/               # Platform adapter layer (Webex, Fake)
-│   │   ├── __init__.py
-│   │   ├── base.py
-│   │   ├── webex.py
-│   │   └── fake.py
-│   ├── core/               # Pure business logic (no I/O to Webex or Excel)
-│   │   ├── __init__.py
-│   │   ├── service.py
-│   │   ├── parser.py
-│   │   ├── masking.py
-│   │   └── textsim.py
-│   └── storage/            # Concurrency queue, Excel store & SQLite state
-│       ├── __init__.py
-│       ├── excel_store.py
-│       ├── write_queue.py
-│       └── state.py
-├── tests/
-│   ├── run_samples.py      # Offline sample & edge-case replay test suite
-│   └── test_webex_adapter.py # Real Webex adapter & webhook test suite
-├── docs/
-│   └── DEMO_SCRIPT.md      # Demo script walkthrough
-├── sample/                 # Sample workbook, attachments and transcripts
-├── data/
-│   └── .gitkeep            # Runtime storage directory (workbook, sqlite, attachments)
-├── .env.example            # Environment variables template
-├── .gitignore              # Git ignore rules (.env, data/*, __pycache__)
-├── requirements.txt        # Runtime dependencies
-├── requirements-dev.txt    # Testing dependencies
-├── README.md               # Project documentation
-└── NOTES.md                # Design decisions, assumptions, and limits
+### 3. Stop Container
+```powershell
+docker compose down
 ```
 
+*All Excel sheets, SQLite databases, attachments, and backups persist in the `./data` folder across container rebuilds.*
+
 ---
 
-## Troubleshooting
+## Testing & Verification
 
-- **`RuntimeError: WEBEX_BOT_TOKEN is not set`**: Create `.env` in the root folder and populate `WEBEX_BOT_TOKEN`.
-- **`401 Unauthorized` on startup**: Your Webex bot token is expired or invalid. Generate a new token on [developer.webex.com](https://developer.webex.com/).
-- **`401 Unauthorized` on `/webex/webhook`**: The incoming Webex webhook signature does not match `WEBEX_WEBHOOK_SECRET`. Ensure the secret in `.env` matches the secret configured on the Webex webhook.
-- **Bot does not respond in group space**: In group spaces, Webex only notifies bots when explicitly @mentioned (e.g. `@Tony add test case:...`). In 1:1 direct messages, no mention is required.
-- **Workbook Locked / Retrying**: Microsoft Excel locks open files against external atomic replace. Close the file in Excel, and Tony will commit the queued write.
+Tony includes two comprehensive, deterministic test suites:
+
+### Functional & Scenario Test Suite (Offline)
+Replays 12 end-to-end sample scenarios and 13 edge cases using an isolated in-memory test chat adapter:
+```powershell
+python tests/test_bot.py
+```
+*(Result: 28/28 tests passed)*.
+
+### Webex Adapter & Webhook Mock Suite
+Verifies signature validation, Webex message fetching, attachment downloading, and rate-limit retries against a mocked Webex API:
+```powershell
+python tests/test_webex.py
+```
+*(Result: 8/8 tests passed)*.
+
+---
+
+## Detailed Documentation
+
+For step-by-step setup walkthroughs, Webex bot creation instructions, and troubleshooting, see [docs/SETUP.md](docs/SETUP.md).

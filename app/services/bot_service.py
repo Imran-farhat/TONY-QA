@@ -1,7 +1,4 @@
-"""Tony's brain: commands -> parse -> (follow-up | duplicate check) -> queue write -> reply.
-
-Chat-agnostic: talks to a ChatAdapter and an ExcelStore only.
-"""
+"""Tony service orchestrator: maps incoming chat commands to Excel operations and replies."""
 from __future__ import annotations
 
 import hashlib
@@ -12,18 +9,29 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
-from ..chat.base import ChatAdapter
-from ..config import Config
-from ..models import CaseRecord, Draft, IncomingMessage
-from ..storage.excel_store import ExcelStore, StoreError, WorkbookLocked
-from ..storage.state import State
-from ..storage.write_queue import Job, WriteQueue
-from . import textsim
-from .masking import mask_text
-from .parser import (PRIORITIES, STATUSES, TC_RE, Command, merge_reply, norm_tc, parse_case, parse_command,
-                     parse_update, split_cases, strip_mention)
+from app.config import Config
+from app.integrations.base import ChatAdapter
+from app.models import CaseRecord, Draft, IncomingMessage
+from app.services import similarity as textsim
+from app.services.command_parser import (
+    PRIORITIES,
+    STATUSES,
+    TC_RE,
+    Command,
+    merge_reply,
+    norm_tc,
+    parse_case,
+    parse_command,
+    parse_update,
+    split_cases,
+    strip_mention,
+)
+from app.services.security import mask_text
+from app.storage.excel import ExcelStore, StoreError, WorkbookLocked
+from app.storage.queue import Job, WriteQueue
+from app.storage.state import State
 
-log = logging.getLogger("tony.service")
+log = logging.getLogger("tony.services.bot_service")
 
 ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".pdf", ".txt", ".log", ".json", ".csv", ".mp4"}
 
@@ -65,7 +73,6 @@ class TonyService:
         self.last_event_ts: float = 0.0
         cfg.staging_dir.mkdir(parents=True, exist_ok=True)
 
-    # ============================================================== entry point
     def handle(self, msg: IncomingMessage) -> None:
         try:
             self._handle(msg)
@@ -85,12 +92,12 @@ class TonyService:
 
     def _handle(self, msg: IncomingMessage):
         if not msg.addressed:
-            return                                           # ignore other chatter
-        if not self.state.claim_event(msg.event_id):         # idempotency: redelivered event
+            return
+        if not self.state.claim_event(msg.event_id):
             log.info("duplicate event %s ignored", msg.event_id)
             return
         self.last_event_ts = time.time()
-        text, n_masked = mask_text(msg.text or "", self.cfg.mask_emails)   # BEFORE anything else
+        text, n_masked = mask_text(msg.text or "", self.cfg.mask_emails)
         text = strip_mention(text)
         cmd = parse_command(text)
         pend = self.state.get_pending(msg.room_id, msg.user_id)
@@ -117,9 +124,7 @@ class TonyService:
             self._send(msg, "I didn't catch that. To save a case, start with `add test case:` and give me the steps and "
                             "expected result. To look one up, ask `where is ...`. Say `help` for everything I can do.")
 
-    # ================================================================= helpers
     def _stage(self, msg: IncomingMessage) -> tuple[list[str], list[str]]:
-        """Persist attachments to a staging dir (survives follow-ups/retries). Returns (paths, rejected)."""
         paths, rejected = [], []
         tag = hashlib.sha1(msg.event_id.encode()).hexdigest()[:10]
         for i, a in enumerate(msg.attachments, 1):
@@ -168,7 +173,6 @@ class TonyService:
                 after()
         self.wq.submit(Job(run=run, on_done=done, on_error=err, on_queued=self._queued_note(msg, what)))
 
-    # ================================================================= ADD flow
     def _cmd_add(self, msg: IncomingMessage, cmd: Command, n_masked: int):
         chunks = split_cases(cmd.arg)
         if not chunks:
@@ -183,7 +187,7 @@ class TonyService:
             d.reporter = reporter_name(msg)
             d.source_key = f"{msg.event_id}#{i}"
             drafts.append(d)
-        drafts[0].attachments = staged            # screenshots belong to the first case in the message
+        drafts[0].attachments = staged
         notes = []
         if n_masked:
             notes.append(f"Masked {n_masked} sensitive value(s) (passwords/tokens/cards) before saving.")
@@ -205,7 +209,7 @@ class TonyService:
                             "\nReply with e.g.  steps: 1) ... 2) ...  expected: ...   (I never guess these; "
                             "say `cancel` to drop it.)")
                 self.state.set_pending(msg.room_id, msg.user_id, {"kind": "followup", "draft": d.to_json(),
-                                                                 "rest": [x.to_json() for x in drafts[i + 1:]]})
+                                                                  "rest": [x.to_json() for x in drafts[i + 1:]]})
                 break
             cases = cases if cases is not None else self.store.all_cases()
             rest_txt = f"{d.steps} {d.expected} {d.actual}"
@@ -216,7 +220,7 @@ class TonyService:
                             f'Reply "new" to save it as a new case, "update" to merge these details into {c.tc_id}, '
                             f'or "cancel".')
                 self.state.set_pending(msg.room_id, msg.user_id, {"kind": "dupe", "draft": d.to_json(), "match": c.tc_id,
-                                                                 "rest": [x.to_json() for x in drafts[i + 1:]]})
+                                                                  "rest": [x.to_json() for x in drafts[i + 1:]]})
                 break
             ready.append(d)
         after = (lambda: self._send(msg, question)) if question else None
@@ -255,7 +259,6 @@ class TonyService:
         wb = f"\nWorkbook: {self.cfg.workbook_url}" if self.cfg.workbook_url else ""
         return head + "\n\n".join(blocks) + tail + wb
 
-    # ============================================================ pending replies
     def _handle_pending(self, msg, pend: dict, text: str, cmd: Command, n_masked: int) -> bool:
         kind = pend["kind"]
         room, user = msg.room_id, msg.user_id
@@ -295,7 +298,7 @@ class TonyService:
                 self.state.clear_pending(room, user)
                 self._merge_into_existing(msg, pend["match"], draft, rest)
                 return True
-            if cmd.kind != "unknown":                       # user moved on to another command
+            if cmd.kind != "unknown":
                 self.state.clear_pending(room, user)
                 self._unstage(draft.attachments)
                 return False
@@ -304,7 +307,7 @@ class TonyService:
 
         if kind == "followup":
             if cmd.kind not in ("unknown",) and not LABEL_ONLY(text):
-                self.state.clear_pending(room, user)          # user moved on to another command
+                self.state.clear_pending(room, user)
                 self._unstage(draft.attachments)
                 return False
             staged, rejected = self._stage(msg)
@@ -346,7 +349,6 @@ class TonyService:
                      lambda: self.store.update_case(tc_id, changes, d.reporter, d.source_key, d.attachments),
                      done, (lambda: self._process(msg, rest, [])) if rest else None)
 
-    # ============================================================ show / list / find
     def _fmt_full(self, c: CaseRecord) -> str:
         lines = [f'{c.tc_id}  "{c.title}"',
                  f'Location: {self._loc(c)} (cells {c.cell_range})',
@@ -429,7 +431,6 @@ class TonyService:
             lines.append(f"...and {len(sel) - 20} more. Narrow it down, e.g. `list high priority Auth cases`.")
         self._send(msg, "\n".join(lines))
 
-    # ============================================================ update / delete
     def _fmt_updated(self, res: dict) -> str:
         parts = []
         for k, old, new in res["diffs"]:
@@ -498,5 +499,5 @@ class TonyService:
 
 def LABEL_ONLY(text: str) -> bool:
     """True if a follow-up answer looks like labelled fields (so 'steps: ...' is not mistaken for a command)."""
-    from .parser import LABEL_RE
+    from app.services.command_parser import LABEL_RE
     return bool(LABEL_RE.search(text))

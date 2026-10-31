@@ -1,13 +1,4 @@
-"""Cisco Webex adapter (REST + webhooks). The ONLY file that knows Webex.
-
-Notes baked in:
-* In group spaces a bot only receives messages that @mention it; in 1:1 spaces it sees everything.
-* The webhook only carries a message id: we GET the message to read text + file URLs.
-* Files must be downloaded with the bot token (Authorization header).
-* Webhook delivery can repeat -> the message id is used as the idempotency key upstream.
-* Webex disables webhooks that fail repeatedly -> ensure_webhook() runs at start and every few
-  minutes and re-creates / re-enables ours (this is the "self-healing reconnect").
-"""
+"""Cisco Webex adapter (REST API and Webhook event handling)."""
 from __future__ import annotations
 
 import hashlib
@@ -19,11 +10,11 @@ from typing import Optional
 
 import requests
 
-from ..config import Config
-from ..models import Attachment, IncomingMessage
-from .base import ChatAdapter
+from app.config import Config
+from app.integrations.base import ChatAdapter
+from app.models import Attachment, IncomingMessage
 
-log = logging.getLogger("tony.webex")
+log = logging.getLogger("tony.integrations.webex")
 API = "https://webexapis.com/v1"
 HOOK_NAME = "tony-messages"
 MAX_MSG_BYTES = 6500
@@ -40,12 +31,11 @@ class WebexAdapter(ChatAdapter):
         self._people: dict[str, str] = {}
         self.webhook_status = "unknown"
 
-    # ------------------------------------------------------------------ http
     def _req(self, method: str, path: str, **kw) -> requests.Response:
         url = path if path.startswith("http") else f"{API}{path}"
         for attempt in range(4):
             r = self.s.request(method, url, timeout=30, **kw)
-            if r.status_code == 429:                       # rate limited
+            if r.status_code == 429:                       # Rate limited
                 wait = int(r.headers.get("Retry-After", "2"))
                 log.warning("Webex 429, sleeping %ss", wait)
                 time.sleep(min(wait, 30))
@@ -63,9 +53,8 @@ class WebexAdapter(ChatAdapter):
         log.info("Webex bot identity: %s (%s)", self.me.get("displayName"), self.me.get("id", "")[-8:])
         self.ensure_webhook()
 
-    # ------------------------------------------------------------- webhooks
     def ensure_webhook(self):
-        """Idempotently make sure exactly one active webhook points at PUBLIC_URL."""
+        """Idempotently ensure an active Webex webhook points to PUBLIC_URL."""
         if not self.cfg.public_url:
             self.webhook_status = "manual (PUBLIC_URL not set)"
             return
@@ -75,12 +64,17 @@ class WebexAdapter(ChatAdapter):
             r.raise_for_status()
             ours = [h for h in r.json().get("items", []) if h.get("name") == HOOK_NAME]
             good = [h for h in ours if h["targetUrl"] == target and h.get("status") == "active"]
-            for h in ours:                                    # remove stale / disabled / duplicate hooks
+            for h in ours:
                 if h not in good[:1]:
                     self._req("DELETE", f"/webhooks/{h['id']}")
             if not good:
-                body = {"name": HOOK_NAME, "targetUrl": target, "resource": "messages", "event": "created",
-                        "secret": self.cfg.webex_webhook_secret or None}
+                body = {
+                    "name": HOOK_NAME,
+                    "targetUrl": target,
+                    "resource": "messages",
+                    "event": "created",
+                    "secret": self.cfg.webex_webhook_secret or None,
+                }
                 cr = self._req("POST", "/webhooks", json={k: v for k, v in body.items() if v})
                 cr.raise_for_status()
                 log.info("Webex webhook (re)created -> %s", target)
@@ -97,7 +91,6 @@ class WebexAdapter(ChatAdapter):
         mac = hmac.new(self.cfg.webex_webhook_secret.encode(), body, hashlib.sha1).hexdigest()
         return hmac.compare_digest(mac, signature)
 
-    # ---------------------------------------------------------------- inbound
     def _person_label(self, person_id: str, email: str) -> str:
         return email or self._people.get(person_id) or person_id
 
@@ -105,7 +98,7 @@ class WebexAdapter(ChatAdapter):
         data = payload.get("data", {})
         if payload.get("resource") != "messages" or payload.get("event") != "created":
             return None
-        if data.get("personId") == self.me.get("id"):          # never react to our own messages
+        if data.get("personId") == self.me.get("id"):          # Ignore self loopback
             return None
         r = self._req("GET", f"/messages/{data['id']}")
         if r.status_code != 200:
@@ -120,9 +113,16 @@ class WebexAdapter(ChatAdapter):
             a = self._download(url)
             if a:
                 atts.append(a)
-        return IncomingMessage(event_id=m["id"], room_id=m["roomId"], user_id=m["personId"],
-                               user_name=self._person_label(m["personId"], m.get("personEmail", "")),
-                               text=text, attachments=atts, is_direct=direct, mentioned=mentioned)
+        return IncomingMessage(
+            event_id=m["id"],
+            room_id=m["roomId"],
+            user_id=m["personId"],
+            user_name=self._person_label(m["personId"], m.get("personEmail", "")),
+            text=text,
+            attachments=atts,
+            is_direct=direct,
+            mentioned=mentioned,
+        )
 
     def _strip_bot_name(self, text: str) -> str:
         name = (self.me.get("displayName") or "tony").strip()
@@ -144,13 +144,15 @@ class WebexAdapter(ChatAdapter):
                     break
             cd = r.headers.get("Content-Disposition", "")
             m = re.search(r'filename="?([^";]+)"?', cd)
-            return Attachment(filename=m.group(1) if m else "file",
-                              content_type=r.headers.get("Content-Type", ""), data=data)
+            return Attachment(
+                filename=m.group(1) if m else "file",
+                content_type=r.headers.get("Content-Type", ""),
+                data=data,
+            )
         except Exception:
             log.exception("file download error")
             return None
 
-    # --------------------------------------------------------------- outbound
     def send(self, room_id: str, text: str) -> None:
         for part in self._split(text):
             r = self._req("POST", "/messages", json={"roomId": room_id, "text": part})

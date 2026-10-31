@@ -1,17 +1,17 @@
-"""In-memory chat used by the offline test script (no Webex needed)."""
+"""In-memory chat adapter used for offline testing without network."""
 from __future__ import annotations
 
 import itertools
 import threading
 
-from ..models import Attachment, IncomingMessage
-from .base import ChatAdapter
+from app.integrations.base import ChatAdapter
+from app.models import Attachment, IncomingMessage
 
 
 class FakeChat(ChatAdapter):
     def __init__(self):
         self.sent: list[tuple[str, str]] = []
-        self.log: list[tuple[str, str]] = []   # full transcript: ("USER"|"TONY", text)
+        self.log: list[tuple[str, str]] = []   # Transcript: ("USER"|"TONY", text)
         self._lock = threading.Lock()
         self._ids = itertools.count(1)
 

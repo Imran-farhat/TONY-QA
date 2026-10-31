@@ -1,16 +1,7 @@
-"""All Excel logic. Knows nothing about chat.
+"""Excel storage engine for test case management.
 
-Design rules
-* The sheets are the source of truth. Rows are ALWAYS located by TC ID (never by a stored
-  row number), because humans sort/insert/delete rows. The Index sheet is a lookup table
-  that is rebuilt from the sheets after every write (and whenever it is found stale/damaged).
-* Every write: process lock (threading) + cross-process file lock -> load -> mutate ->
-  timestamped backup of the previous file -> write to temp file -> atomic os.replace.
-  A reader never sees a half-written workbook and a crash never corrupts the file.
-* If the workbook is open in Excel/LibreOffice (owner-lock file, or Windows refusing the
-  replace) we raise WorkbookLocked and the caller queues + retries instead of crashing.
-* Nothing is physically deleted: delete = Status "Deleted" (+ grey/strikethrough), the Audit
-  sheet records every change with old/new value, and TC IDs are never reused.
+Maintains Excel sheets as the source of truth with atomic writes,
+index rebuilding, audit logging, and open-file lock protections.
 """
 from __future__ import annotations
 
@@ -30,15 +21,19 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from ..config import Config
-from ..models import CaseRecord, Draft
+from app.config import Config
+from app.models import CaseRecord, Draft
 
-log = logging.getLogger("tony.excel")
+log = logging.getLogger("tony.storage.excel")
 
-HEADERS = ["TC ID", "Title", "Module", "Priority", "Steps", "Expected", "Actual",
-           "Environment", "Links", "Attachments", "Status", "Reporter / Date"]
-COL = {"tc_id": 1, "title": 2, "module": 3, "priority": 4, "steps": 5, "expected": 6, "actual": 7,
-       "environment": 8, "links": 9, "attachments": 10, "status": 11, "reporter": 12}
+HEADERS = [
+    "TC ID", "Title", "Module", "Priority", "Steps", "Expected", "Actual",
+    "Environment", "Links", "Attachments", "Status", "Reporter / Date"
+]
+COL = {
+    "tc_id": 1, "title": 2, "module": 3, "priority": 4, "steps": 5, "expected": 6, "actual": 7,
+    "environment": 8, "links": 9, "attachments": 10, "status": 11, "reporter": 12
+}
 WIDTHS = [11, 42, 14, 10, 52, 30, 30, 18, 38, 34, 12, 24]
 INDEX_HEADERS = ["TC ID", "Sheet", "Row", "Cell (click to jump)", "Title", "Status", "Module"]
 AUDIT_HEADERS = ["Timestamp", "User", "Action", "TC ID", "Field", "Old value", "New value", "Source msg"]
@@ -53,7 +48,7 @@ class WorkbookLocked(Exception):
 
 
 class StoreError(Exception):
-    pass
+    """General storage error."""
 
 
 def _sanitize_sheet(name: str) -> str:
@@ -67,7 +62,7 @@ def _sanitize_sheet(name: str) -> str:
 
 
 def _set(cell, value):
-    """Write text safely: never let user text become a formula (=, +, -, @ ...)."""
+    """Write text safely: never let user input become an executable Excel formula."""
     if isinstance(value, str):
         value = value[:MAX_CELL]
         cell.value = value
@@ -85,15 +80,14 @@ class ExcelStore:
         self._tlock = threading.RLock()
         self._flock = FileLock(str(self.path) + ".lock", timeout=60)
         self._cache: Optional[tuple[tuple, list[CaseRecord]]] = None
-        self.simulate_locked = False          # test hook (sample #11)
+        self.simulate_locked = False          # Test hook
         cfg.data_dir.mkdir(parents=True, exist_ok=True)
         cfg.attachments_dir.mkdir(parents=True, exist_ok=True)
         cfg.backups_dir.mkdir(parents=True, exist_ok=True)
         if not self.path.exists():
             with self.transaction():
-                pass                           # creates the workbook with Index + Audit
+                pass                           # Creates workbook with Index + Audit
 
-    # ------------------------------------------------------------------ helpers
     def now(self) -> datetime:
         return datetime.now(self.tz)
 
@@ -149,7 +143,6 @@ class ExcelStore:
             r -= 1
         return r
 
-    # -------------------------------------------------------------- load / save
     def _load_or_create(self) -> Workbook:
         if not self.path.exists():
             wb = Workbook()
@@ -158,8 +151,8 @@ class ExcelStore:
             return wb
         try:
             wb = load_workbook(self.path)
-        except Exception as e:                       # damaged file -> restore newest backup
-            log.error("Workbook unreadable (%s); trying latest backup", e)
+        except Exception as e:                       # Damaged file -> restore newest backup
+            log.error("Workbook unreadable (%s); attempting restore from newest backup", e)
             backups = sorted(self.cfg.backups_dir.glob("*.xlsx"))
             if not backups:
                 raise StoreError(f"Workbook is damaged and no backup exists: {e}")
@@ -191,7 +184,7 @@ class ExcelStore:
 
     @contextmanager
     def transaction(self):
-        """Exclusive, atomic read-modify-write. Raises WorkbookLocked if the file is busy."""
+        """Exclusive, atomic read-modify-write context. Raises WorkbookLocked if file is locked."""
         self._check_unlocked()
         with self._tlock:
             try:
@@ -203,9 +196,8 @@ class ExcelStore:
                     self._atomic_save(wb)
                     self._cache = None
             except Timeout:
-                raise WorkbookLocked("another Tony process holds the workbook lock")
+                raise WorkbookLocked("another process holds the workbook lock")
 
-    # ------------------------------------------------------------------- reading
     def _row_to_record(self, ws, r: int, vals) -> Optional[CaseRecord]:
         tc = str(vals[0]).strip() if vals[0] is not None else ""
         if not TC_ID_RE.match(tc):
@@ -223,7 +215,7 @@ class ExcelStore:
         return out
 
     def all_cases(self) -> list[CaseRecord]:
-        """Live scan of the sheets (cached by file mtime/size). Reads never take the write lock."""
+        """Scan sheets (cached by file mtime/size). Reads never block write queue."""
         try:
             st = self.path.stat()
         except FileNotFoundError:
@@ -255,7 +247,7 @@ class ExcelStore:
         return None
 
     def index_ok(self) -> bool:
-        """True if the Index sheet matches the real sheets (used by /health and tests)."""
+        """True if Index sheet matches actual sheet layout."""
         wb = load_workbook(self.path, data_only=True)
         idx = {}
         if "Index" in wb.sheetnames:
@@ -266,7 +258,6 @@ class ExcelStore:
         wb.close()
         return idx == real
 
-    # ----------------------------------------------------------- index & audit
     def _rebuild_index(self, wb: Workbook):
         ws = wb["Index"]
         if ws.max_row > 1:
@@ -292,7 +283,6 @@ class ExcelStore:
             c.alignment = Alignment(wrap_text=True, vertical="top")
 
     def _next_id(self, wb: Workbook) -> str:
-        """Max over live rows, Index and Audit -> IDs are never reused, even after hand-deleted rows."""
         top = 0
         for c in self._scan(wb):
             top = max(top, int(c.tc_id[3:]))
@@ -311,9 +301,8 @@ class ExcelStore:
                     return ws, r
         return None, 0
 
-    # ---------------------------------------------------------------- mutations
     def add_cases(self, drafts: list[Draft], user: str) -> list[dict]:
-        """Write all drafts in ONE transaction. Idempotent per draft.source_key."""
+        """Write all drafts in ONE atomic transaction. Idempotent per draft.source_key."""
         results, cleanup = [], []
         with self.transaction() as wb:
             done = {}
@@ -322,7 +311,7 @@ class ExcelStore:
                     if r and r[2] == "ADD" and r[7]:
                         done[r[7]] = r[3]
             for d in drafts:
-                if d.source_key and d.source_key in done:          # already saved (replayed event)
+                if d.source_key and d.source_key in done:
                     ws, row = self._find_row(wb, done[d.source_key])
                     if ws:
                         results.append(self._result(done[d.source_key], ws.title, row, [], d, duplicate_event=True))
@@ -348,7 +337,7 @@ class ExcelStore:
                     ws.cell(row=row, column=COL["attachments"]).font = Font(name=FONT, color="0563C1", underline="single")
                 self._audit(wb, d.reporter, "ADD", tc_id, "", "", d.title, d.source_key)
                 results.append(self._result(tc_id, ws.title, row, files, d))
-        for f in cleanup:                      # staged copies are removed only after a successful commit
+        for f in cleanup:
             Path(f).unlink(missing_ok=True)
         return results
 

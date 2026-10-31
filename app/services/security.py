@@ -1,9 +1,16 @@
-"""Mask secrets / personal data BEFORE parsing, saving or sending text to any LLM."""
+"""Security and data masking utilities.
+
+Sanitizes credentials, bearer tokens, API keys, Aadhaar numbers,
+and credit card numbers before parsing, persistence, or logging.
+"""
 from __future__ import annotations
 
 import re
 
-_KEYS = r"(?:pass(?:word|wd)?|pwd|passcode|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret|auth(?:orization)?|otp|pin|cvv)"
+_KEYS = (
+    r"(?:pass(?:word|wd)?|pwd|passcode|secret|token|api[_-]?key|"
+    r"access[_-]?key|client[_-]?secret|auth(?:orization)?|otp|pin|cvv)"
+)
 
 _KV = re.compile(rf"(?i)(?<![A-Za-z0-9_])({_KEYS})(\s*[:=]\s*)(?!\*{{3,}})(\"[^\"]*\"|'[^']*'|\S+)")
 _IS = re.compile(rf"(?i)(?<![A-Za-z0-9_])({_KEYS})(\s+(?:is|was|=>)\s+)(?!\*{{3,}})(\S+)")

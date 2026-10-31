@@ -1,8 +1,7 @@
-"""Replay the 12 sample messages from the brief WITHOUT Webex (fake chat adapter) and print pass/fail.
+"""Comprehensive offline functional and edge-case test suite for Tony Bot.
 
-    python tests/run_samples.py                 # runs in a temp dir
-    python tests/run_samples.py --out sample    # keeps workbook + attachments + backups there (demo output)
-Exit code 0 = everything passed.
+Replays all 12 core functional scenarios + 13 safety edge cases using FakeChat adapter.
+Preserves 100% of original scenario coverage.
 """
 from __future__ import annotations
 
@@ -12,20 +11,20 @@ import shutil
 import sys
 import tempfile
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+# Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from openpyxl import load_workbook  # noqa: E402
+from openpyxl import load_workbook
 
-from bot.chat.fake import FakeChat  # noqa: E402
-from bot.config import Config  # noqa: E402
-from bot.core.service import TonyService  # noqa: E402
-from bot.models import Attachment  # noqa: E402
-from bot.storage.excel_store import ExcelStore  # noqa: E402
-from bot.storage.state import State  # noqa: E402
+from app.config import Config
+from app.integrations.fake import FakeChat
+from app.models import Attachment
+from app.services.bot_service import TonyService
+from app.storage.excel import ExcelStore
+from app.storage.state import State
 
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 results: list[tuple[str, bool, str]] = []
@@ -65,7 +64,7 @@ def main():
     wbp = cfg.workbook_path
 
     def say(text, **kw):
-        """Send a message to Tony, wait for queued writes, return the replies it produced."""
+        """Send message to Tony, wait for background queue to idle, return replies."""
         m = chat.mark
         svc.handle(chat.message(text, **kw))
         svc.wq.wait_idle(30)
@@ -184,13 +183,15 @@ Expected: 401 with message. Actual: 500. module: Auth""")
           " || ".join(x.replace("\n", " | ") for x in r))
 
     # ------------------------------------------------------ 12 twenty at once
-    titles = ["Invoice PDF footer overlaps totals", "Cart badge shows stale count", "Dark theme hides toggle label",
-              "Avatar upload rejects HEIC files", "Password reset email arrives late", "Search autocomplete flickers",
-              "Calendar picker skips leap day", "Notification bell never clears", "Profile bio truncates emoji",
-              "Coupon applies twice at payment", "Sidebar collapses after rotation", "Webhook retries stop silently",
-              "Pagination resets active filter", "Currency symbol misaligned in table", "Drag handle unresponsive on touch",
-              "Onboarding wizard loops step three", "Receipt download returns 404", "Language switch ignores locale",
-              "Date range exceeds quota limit", "Upload progress bar jumps backwards"]
+    titles = [
+        "Invoice PDF footer overlaps totals", "Cart badge shows stale count", "Dark theme hides toggle label",
+        "Avatar upload rejects HEIC files", "Password reset email arrives late", "Search autocomplete flickers",
+        "Calendar picker skips leap day", "Notification bell never clears", "Profile bio truncates emoji",
+        "Coupon applies twice at payment", "Sidebar collapses after rotation", "Webhook retries stop silently",
+        "Pagination resets active filter", "Currency symbol misaligned in table", "Drag handle unresponsive on touch",
+        "Onboarding wizard loops step three", "Receipt download returns 404", "Language switch ignores locale",
+        "Date range exceeds quota limit", "Upload progress bar jumps backwards"
+    ]
     n_before = total_cases(wbp)
     mark = chat.mark
     with ThreadPoolExecutor(20) as ex:
@@ -200,13 +201,13 @@ Expected: 401 with message. Actual: 500. module: Auth""")
     svc.wq.wait_idle(60)
     ids = [x[0] for x in rows(wbp, "Bulk")]
     saved_msgs = [t for t in chat.replies_since(mark) if t.startswith("Saved as")]
-    wb = load_workbook(wbp)  # must still open cleanly
+    wb = load_workbook(wbp)
     wb.close()
     check("12 20 messages at once -> 20 rows, 20 unique IDs, workbook intact, 20 confirmations",
           len(ids) == 20 and len(set(ids)) == 20 and total_cases(wbp) == n_before + 20 and len(saved_msgs) == 20,
           f"rows={len(ids)} unique={len(set(ids))} confirmations={len(saved_msgs)}")
 
-    if args.out:   # clean demo workbook: state right after the 12 official samples, before edge-case tampering
+    if args.out:
         shutil.copy2(wbp, root / "testcases_after_12_samples.xlsx")
 
     # ======================================================== extra edge cases
@@ -270,7 +271,7 @@ Expected: 401 with message. Actual: 500. module: Auth""")
     extra("E13 disallowed attachment type is skipped with a notice", "Skipped attachment" in last(r) or "looks like" in last(r))
 
     # ----------------------------------------------------------------- report
-    print("\nTony sample replay  (fake chat, no Webex)\n" + "=" * 78)
+    print("\nTony functional test suite  (fake chat, no Webex)\n" + "=" * 78)
     for name, ok, detail in results:
         print(f"[{'PASS' if ok else 'FAIL'}] {name}")
         if not ok:

@@ -1,8 +1,7 @@
 """Serialised write queue with lock-aware retry.
 
-All workbook writes go through ONE worker thread, so concurrent chat messages can never
-interleave inside the file. If the workbook is locked (someone has it open in Excel) the job
-is retried every few seconds; the user is told once that the write is queued.
+All workbook writes go through ONE dedicated background thread, ensuring
+concurrent requests never interleave inside the Excel workbook.
 """
 from __future__ import annotations
 
@@ -13,9 +12,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .excel_store import WorkbookLocked
+from app.storage.excel import WorkbookLocked
 
-log = logging.getLogger("tony.queue")
+log = logging.getLogger("tony.storage.queue")
 
 
 @dataclass
@@ -46,7 +45,7 @@ class WriteQueue:
     def submit(self, job: Job):
         with self._cv:
             self._pending += 1
-        if self.is_locked():                    # tell the user straight away
+        if self.is_locked():
             self._notify(job)
         self._q.put(job)
 
@@ -77,7 +76,7 @@ class WriteQueue:
     def _worker(self):
         while True:
             job = self._q.get()
-            while True:                          # head-of-line retry keeps FIFO order
+            while True:
                 try:
                     result = job.run()
                 except WorkbookLocked:

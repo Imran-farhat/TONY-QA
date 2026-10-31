@@ -1,17 +1,15 @@
-"""Turn chat text into commands and structured test-case fields.
+"""Command parsing and structured test-case field extraction.
 
-Deterministic, rule-based parsing on purpose: it never invents a step or an expected
-result (guardrail), it is testable offline, and it needs no API key. An LLM extractor
-could be dropped in behind `parse_case` later (after masking) for freer-form text.
+Deterministic rule-based parser that extracts test case fields and commands
+without ever hallucinating missing steps or expected results.
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
-from ..models import Draft
+from app.models import Draft
 
-# ----------------------------------------------------------------------------- ids
 TC_RE = re.compile(r"(?i)(?<![A-Za-z0-9])TC[-_ ]?(\d{1,6})(?![A-Za-z0-9])")
 
 
@@ -20,18 +18,19 @@ def norm_tc(text: str) -> str:
     return f"TC-{int(m.group(1)):04d}" if m else ""
 
 
-# ----------------------------------------------------------------------- commands
 @dataclass
 class Command:
-    kind: str            # help add show update delete restore list find unknown
+    kind: str            # help, add, show, update, delete, restore, list, find, unknown
     arg: str = ""
     tc_id: str = ""
 
 
 _MENTION = re.compile(r"(?i)^\s*@?tony\b[\s,:\-]*")
 _TCP = r"(TC[-_ ]?\d{1,6})"
-_ADD = re.compile(r"(?is)^(?:please\s+)?(?:add|new|create|log|save|file|report)\s+(?:a\s+|an\s+|new\s+)?"
-                  r"(?:test[\s-]*cases?|tcs?|cases?|bugs?)\b\s*[:\-–]?\s*(.*)$")
+_ADD = re.compile(
+    r"(?is)^(?:please\s+)?(?:add|new|create|log|save|file|report)\s+(?:a\s+|an\s+|new\s+)?"
+    r"(?:test[\s-]*cases?|tcs?|cases?|bugs?)\b\s*[:\-–]?\s*(.*)$"
+)
 _ADD2 = re.compile(r"(?is)^add\s*:\s*(.*)$")
 _SHOW = re.compile(rf"(?is)^(?:show|get|display|open|view|details?(?:\s+of)?)\s+(?:me\s+)?(?:test[\s-]*case\s+)?{_TCP}\s*$")
 _BARE_TC = re.compile(rf"(?is)^{_TCP}\s*\??$")
@@ -74,7 +73,6 @@ def parse_command(text: str) -> Command:
     return Command("unknown", t)
 
 
-# ------------------------------------------------------------------ field labels
 _ALIASES = {
     "title": ["title", "summary"],
     "module": ["module", "component", "தொகுதி"],
@@ -102,9 +100,11 @@ PRIORITIES = [
     (r"\b(medium|med|moderate|normal|p2|sev\s?3)\b", "Medium"),
     (r"\b(low|minor|trivial|p3|sev\s?4)\b", "Low"),
 ]
-STATUSES = {"open": "Open", "in progress": "In Progress", "wip": "In Progress", "passed": "Passed",
-            "pass": "Passed", "failed": "Failed", "fail": "Failed", "blocked": "Blocked",
-            "retest": "Retest", "closed": "Closed", "fixed": "Fixed", "reopened": "Open"}
+STATUSES = {
+    "open": "Open", "in progress": "In Progress", "wip": "In Progress", "passed": "Passed",
+    "pass": "Passed", "failed": "Failed", "fail": "Failed", "blocked": "Blocked",
+    "retest": "Retest", "closed": "Closed", "fixed": "Fixed", "reopened": "Open"
+}
 
 
 def norm_priority(v: str) -> str:
@@ -162,12 +162,14 @@ def normalize_steps(raw: str) -> str:
     return " ".join(f"{i}) {_clean(p)}" for i, p in enumerate(parts, 1) if _clean(p))
 
 
-_ENV_RE = re.compile(r"(?i)\b(safari|chrome|firefox|edge|opera|brave|ios|ipados|android|windows|macos|linux|ubuntu)"
-                     r"(?:\s+v?(\d{1,3}(?:\.\d+)*))?\b")
+_ENV_RE = re.compile(
+    r"(?i)\b(safari|chrome|firefox|edge|opera|brave|ios|ipados|android|windows|macos|linux|ubuntu)"
+    r"(?:\s+v?(\d{1,3}(?:\.\d+)*))?\b"
+)
 
 
 def detect_environment(text: str) -> str:
-    """Only literal mentions (e.g. 'Safari 17', 'macOS'); never an assumption."""
+    """Only literal browser/OS mentions; never an assumption."""
     found: list[str] = []
     for m in _ENV_RE.finditer(text):
         name = {"ios": "iOS", "macos": "macOS", "ipados": "iPadOS"}.get(m.group(1).lower(), m.group(1).capitalize())
@@ -178,7 +180,7 @@ def detect_environment(text: str) -> str:
 
 
 def parse_case(chunk: str) -> Draft:
-    """Extract fields from ONE case. Missing things stay empty - never guessed."""
+    """Extract fields from ONE test case. Missing elements remain empty."""
     text = _ATTACH_NOTE.sub(" ", chunk).strip()
     leading, f = split_labelled(text)
     d = Draft()
@@ -210,7 +212,7 @@ def parse_case(chunk: str) -> Draft:
 
 
 def merge_reply(draft: Draft, text: str) -> Draft:
-    """Fill the gaps of a pending draft from a follow-up answer."""
+    """Fill gaps of a pending draft from a follow-up answer."""
     new = parse_case(text)
     labelled = bool(LABEL_RE.search(text))
     if not labelled:
@@ -228,9 +230,10 @@ def merge_reply(draft: Draft, text: str) -> Draft:
     return draft
 
 
-# ------------------------------------------------------------- multi-case split
-CASE_MARK = re.compile(r"(?im)^[ \t]*(?:@?tony[ \t]+)?(?:(?:add|new|log|create)[ \t]+)?"
-                       r"(?:test[ \t]*cases?|cases?|tc)[ \t]*#?\d*[ \t]*[:\-–][ \t]*")
+CASE_MARK = re.compile(
+    r"(?im)^[ \t]*(?:@?tony[ \t]+)?(?:(?:add|new|log|create)[ \t]+)?"
+    r"(?:test[ \t]*cases?|cases?|tc)[ \t]*#?\d*[ \t]*[:\-–][ \t]*"
+)
 
 
 def split_cases(body: str) -> list[str]:
@@ -243,7 +246,6 @@ def split_cases(body: str) -> list[str]:
     return [c.strip() for c in chunks if c.strip()]
 
 
-# ---------------------------------------------------------------- update fields
 UPDATABLE = ("title", "priority", "steps", "expected", "actual", "environment", "links", "status", "module")
 
 

@@ -1,4 +1,8 @@
-"""Exercises the real Webex adapter + FastAPI webhook against a mocked Webex REST API (no network)."""
+"""Exercises the real Webex adapter and FastAPI webhook against a mocked Webex REST API.
+
+Tests signature validation, duplicate delivery, field extraction, credential masking,
+attachment downloading with auth, response posting, and health endpoint.
+"""
 from __future__ import annotations
 
 import base64
@@ -11,13 +15,14 @@ import time
 from pathlib import Path
 from unittest import mock
 
+# Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import requests  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
+import requests
+from fastapi.testclient import TestClient
 
-from bot.app import build_app  # noqa: E402
-from bot.config import Config  # noqa: E402
+from app.config import Config
+from app.main import build_app
 
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 SECRET = "s3cret"
@@ -27,32 +32,54 @@ auth_seen: list[str] = []
 
 class R:
     def __init__(self, code=200, body=None, headers=None, raw=b""):
-        self.status_code, self._b, self.headers, self._raw, self.text = code, body, headers or {}, raw, json.dumps(body or {})
+        self.status_code = code
+        self._b = body
+        self.headers = headers or {}
+        self._raw = raw
+        self.text = json.dumps(body or {})
 
-    def json(self): return self._b
+    def json(self):
+        return self._b
+
     def raise_for_status(self):
-        if self.status_code >= 400: raise requests.HTTPError(str(self.status_code))
-    def iter_content(self, n): yield self._raw
+        if self.status_code >= 400:
+            raise requests.HTTPError(str(self.status_code))
+
+    def iter_content(self, n):
+        yield self._raw
 
 
 def fake_request(self, method, url, **kw):
     auth_seen.append(self.headers.get("Authorization", ""))
-    if url.endswith("/people/me"): return R(body={"id": "BOT", "displayName": "Tony"})
-    if url.endswith("/webhooks") and method == "GET": return R(body={"items": []})
-    if url.endswith("/webhooks") and method == "POST": return R(body={"id": "H1"})
+    if url.endswith("/people/me"):
+        return R(body={"id": "BOT", "displayName": "Tony"})
+    if url.endswith("/webhooks") and method == "GET":
+        return R(body={"items": []})
+    if url.endswith("/webhooks") and method == "POST":
+        return R(body={"id": "H1"})
     if "/messages/M1" in url or "/messages/M2" in url:
-        return R(body={"id": url.rsplit("/", 1)[1], "roomId": "R1", "personId": "P1", "personEmail": "priya@example.com",
-                       "roomType": "group", "mentionedPeople": ["BOT"], "files": ["https://webexapis.com/v1/contents/F1"],
-                       "text": "Tony add test case: Login fails on Safari. Steps: 1) open /login 2) sign in "
-                               "Expected: dashboard Actual: spinner module: Auth priority: high password=Hunter2"})
-    if "/contents/F1" in url: return R(headers={"Content-Disposition": 'attachment; filename="shot.png"', "Content-Type": "image/png"}, raw=PNG)
+        return R(body={
+            "id": url.rsplit("/", 1)[1],
+            "roomId": "R1",
+            "personId": "P1",
+            "personEmail": "priya@example.com",
+            "roomType": "group",
+            "mentionedPeople": ["BOT"],
+            "files": ["https://webexapis.com/v1/contents/F1"],
+            "text": "Tony add test case: Login fails on Safari. Steps: 1) open /login 2) sign in "
+                    "Expected: dashboard Actual: spinner module: Auth priority: high password=Hunter2"
+        })
+    if "/contents/F1" in url:
+        return R(headers={"Content-Disposition": 'attachment; filename="shot.png"', "Content-Type": "image/png"}, raw=PNG)
     if url.endswith("/messages") and method == "POST":
-        posted.append(kw["json"]); return R(body={"id": "OUT"})
+        posted.append(kw["json"])
+        return R(body={"id": "OUT"})
     return R(404, {})
 
 
 def main() -> int:
     ok = True
+
     def check(name, cond):
         nonlocal ok
         ok &= bool(cond)
