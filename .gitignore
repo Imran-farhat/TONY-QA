@@ -8,3 +8,6 @@ __pycache__/
 .venv/
 *.tmp
 *.lock
+
+*.mp4
+Working Demo/
